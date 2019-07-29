@@ -22,9 +22,9 @@ class main:
         self.time2 = 0
         self.old_volume = 0
         previous_ms = 0
-        client_secret = "afdc78c3b032414c89a1ed6bb75a50c4"
-        client_id =  "84995ad2d73d410f9435fbe299ff4860"
-        username = 'joosthoi1'
+        client_secret = ""
+        client_id =  ""
+        username = ''
 
         scope = 'user-library-read user-modify-playback-state user-read-playback-state'
 
