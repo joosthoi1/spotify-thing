@@ -7,6 +7,7 @@ import time
 import threading
 import json
 import datetime
+import sys
 
 
 class main:
@@ -15,6 +16,7 @@ class main:
 
         self.playing = {}
 
+        self.kill_thread = False
         self.index = 0
         self.uri_entries = []
         self.start_entries = []
@@ -44,7 +46,6 @@ class main:
         }
 
         play_thread = threading.Thread(target=self.listener)
-        play_thread.isDeamon = False
         play_thread.start()
 
         self.add_scrollbar()
@@ -105,6 +106,7 @@ class main:
                 self.root.update()
             except tk.TclError:
                 break
+        self.kill_thread = True
 
     def scale_command(self, value):
         if 'progress_ms' in self.playing:
@@ -237,6 +239,8 @@ class main:
                 time.sleep(1)
             if response.status_code != 204 and response.status_code != 429:
                 self.playing = json.loads(response.text)
+            if kill_thread:
+                return
 
     def add_scrollbar(self):
         self.canvas = tk.Canvas(self.root, borderwidth=0, height=650,width=580)
