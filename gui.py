@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import ttk
 from functools import partial
 import spotipy
 import spotipy.util as util
@@ -11,8 +12,9 @@ import sys
 
 
 class main:
-    def __init__(self):
+    def __init__(self, device_id=None):
         self.root = tk.Tk()
+        self.root.title("Spotify")
 
         self.playing = {}
 
@@ -24,9 +26,11 @@ class main:
         self.time2 = 0
         self.old_volume = 0
         previous_ms = 0
-        client_secret = ""
-        client_id =  ""
-        username = ''
+        with open("config.json", 'r') as file:
+            config = json.loads(file.read())
+            username = config['username']
+            client_id = config['client_id']
+            client_secret = config['client_secret']
 
         scope = 'user-library-read user-modify-playback-state user-read-playback-state'
 
@@ -46,6 +50,7 @@ class main:
         }
 
         play_thread = threading.Thread(target=self.listener)
+        play_thread.isDeamon = True
         play_thread.start()
 
         self.add_scrollbar()
@@ -53,6 +58,7 @@ class main:
             self.add_uri()
         self.add_lower_frame()
         self.add_volume()
+        self.buttons()
 
         while self.playing == {}:
             self.root.update()
@@ -101,12 +107,27 @@ class main:
                         str(seconds).rjust(2, '0')
                     )
                     self.label3['text'] = format
+                if 'shuffle_state' in self.playing:
+                    self.shuffle_var.set(self.playing['shuffle_state'])
+                if 'repeat_state' in self.playing:
+                    if self.playing['repeat_state'] == 'track':
+                        self.repeat_var.set(True)
+                    else:
+                        self.repeat_var.set(False)
+                if 'is_playing' in self.playing:
+                    self.play_var.set(self.playing['is_playing'])
+                    if self.play_var.get():
+                        self.play_button['text'] = '⏸'
+                    else:
+                        self.play_button['text'] = '▶'
+
 
 
                 self.root.update()
             except tk.TclError:
                 break
         self.kill_thread = True
+        play_thread.join()
 
     def scale_command(self, value):
         if 'progress_ms' in self.playing:
@@ -130,21 +151,25 @@ class main:
 
     def add_lower_frame(self):
         self.lower_frame = tk.Frame(self.canvas)
+        self.lower_frame.grid_propagate = False
+        self.lower_frame.pack_propagate = False
         self.lower_frame.pack(side='bottom', anchor='w')
         self.label1 = tk.Label(
             self.lower_frame,
             text = '',
             anchor = 'w',
             justify='left',
-            wraplength = 200
+            wraplength = 200,
+            width=28
         )
         self.label2 = tk.Label(
             self.lower_frame,
             text = '',
             anchor = 'sw',
-            wraplength = 200
+            wraplength = 200,
+            width=28
         )
-        self.label3 = tk.Label(self.lower_frame, text = '', anchor = 'sw')
+        self.label3 = tk.Label(self.lower_frame, text = '', anchor = 'sw',width=4)
         self.label4 = tk.Label(self.lower_frame, text = '', anchor = 'sw')
         self.label1.grid(row=0,column=0,sticky='sw')
         self.label2.grid(row=1,column=0,sticky='sw')
@@ -157,20 +182,117 @@ class main:
             command=self.scale_command,
             showvalue=False
         )
-        self.scale.grid(row=1,column=2)
+        self.scale.grid(row=1,column=2,sticky='s')
+
+        self.buttons_frame = tk.Frame(self.lower_frame)
 
     def add_volume(self):
-        self.volume_frame = tk.Frame(self.canvas)
-        self.volume_frame.pack(side = 'right', anchor='s')
+        tk.Label(self.lower_frame,text='Volume:').grid(row=1, column=4)
         self.volume_scale = tk.Scale(
-            self.volume_frame,
+            self.lower_frame,
             command = self.volume_command,
-            from_ = 100,
-            to = 0
+            orient= 'horizontal',
+            showvalue=False,
         )
-        self.volume_scale.grid(row=0,column=0)
+        self.volume_scale.grid(row=1,column=5)
 
+    def buttons(self):
+        self.button_frame = tk.Frame(self.lower_frame)
+        self.button_frame.grid(row=0, column=2)
+        self.shuffle_var = tk.BooleanVar()
+        self.play_var = tk.BooleanVar()
+        self.repeat_var = tk.BooleanVar()
+        tk.Checkbutton(
+            self.button_frame,
+            text='Shuffle',
+            indicatoron=False,
+            variable = self.shuffle_var,
+            command=self.shuffle
+        ).pack(side='left')
+        tk.Button(
+            self.button_frame,
+            text='⏮️',
+            command = self.previous
+        ).pack(side='left')
+        self.play_button = tk.Checkbutton(
+            self.button_frame,
+            text='⏸',
+            variable = self.play_var,
+            indicatoron=False,
+            command=self.play
+        )
+        self.play_button.pack(side='left')
+        tk.Button(
+            self.button_frame,
+            text='⏭',
+            command=self.next
+        ).pack(side='left')
+        tk.Checkbutton(
+            self.button_frame,
+            text='Repeat',
+            variable = self.repeat_var,
+            command=self.repeat,
+            indicatoron=False
+        ).pack(side='left')
 
+    def shuffle(self):
+        shuffle = self.shuffle_var.get()
+        params = {
+            "state":shuffle
+        }
+        r = requests.put(
+            "https://api.spotify.com/v1/me/player/shuffle",
+            headers = self.headers,
+            params=params
+        )
+        print(r)
+
+    def play(self):
+        play = self.play_var.get()
+        if play:
+
+            r = requests.put(
+                "https://api.spotify.com/v1/me/player/play",
+                headers=self.headers
+            )
+        else:
+            r = requests.put(
+                "https://api.spotify.com/v1/me/player/pause",
+                headers=self.headers
+            )
+        print(r.text)
+
+    def repeat(self):
+        play = self.repeat_var.get()
+        if play:
+            params = {
+            "state": "track"
+            }
+        else:
+            params = {
+            "state": "off"
+            }
+
+        r = requests.put(
+            "https://api.spotify.com/v1/me/player/repeat",
+            headers = self.headers,
+            params= params
+        )
+        print(r)
+    def next(self):
+        r = requests.post(
+            "https://api.spotify.com/v1/me/player/next",
+            headers = self.headers
+        )
+        print(r)
+
+    def previous(self):
+        r = requests.post(
+            "https://api.spotify.com/v1/me/player/previous",
+            headers = self.headers
+        )
+        print(r)
+        print(r.text)
 
     def add_uri(self):
         f1 = tk.Frame(self.frame, relief='raised',bd=2)
@@ -218,7 +340,6 @@ class main:
         time1 = (int(end)-int(start))/1000
         print((int(end)-int(start))/1000)
         t = threading.Thread(target=self.time_thread, args=(time1,))
-        t.isDeamon = True
         t.start()
 
 
@@ -239,11 +360,12 @@ class main:
                 time.sleep(1)
             if response.status_code != 204 and response.status_code != 429:
                 self.playing = json.loads(response.text)
-            if kill_thread:
+            if self.kill_thread:
                 return
+            time.sleep(0.05)
 
     def add_scrollbar(self):
-        self.canvas = tk.Canvas(self.root, borderwidth=0, height=650,width=580)
+        self.canvas = tk.Canvas(self.root, borderwidth=0, height=650,width=680)
         self.canvas.pack_propagate(False)
         self.frame = tk.Frame(self.canvas)
 
