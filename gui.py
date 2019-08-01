@@ -448,6 +448,3 @@ class Refresh:
 
 if __name__ == "__main__":
     Main()
-    import gui
-    r = gui.Refresh("84995ad2d73d410f9435fbe299ff4860", "2b388f9eb6fe46fabf2b5cde283d92f3")
-    r.refresh_auth("AQAvSk0IrzTe5q5cI9UwwA0vvKXUZVhL9y7c4vb26v-JbRdDFzZX3DkySbsD1oAnstLhP02riUaYH3Y0c2LrPwwN6P1o96XSFzyP0i46w5gTsYqiA4QNPLJ74xh1XVFS1FUKpw")
