@@ -8,13 +8,14 @@ import time
 import threading
 import json
 import datetime
-import sys
+import base64
 
 
-class main:
+class Main:
     def __init__(self, device_id=None):
         self.root = tk.Tk()
         self.root.title("Spotify")
+
 
         self.playing = {}
 
@@ -28,7 +29,7 @@ class main:
         previous_ms = 0
         with open("config.json", 'r') as file:
             config = json.loads(file.read())
-            username = config['username']
+            self.username = config['username']
             client_id = config['client_id']
             client_secret = config['client_secret']
 
@@ -36,11 +37,15 @@ class main:
 
 
         self.token = util.prompt_for_user_token(
-            username,
+            self.username,
             scope,
             client_id=client_id,
             client_secret=client_secret,
             redirect_uri='http://google.com/'
+        )
+        self.refreshing = Refresh(
+            client_id=client_id,
+            client_secret=client_secret
         )
 
         self.headers = {
@@ -54,14 +59,11 @@ class main:
         play_thread.start()
 
         self.add_scrollbar()
+        self.add_last()
         for i in range(8):
             self.add_uri()
-        self.add_lower_frame()
         self.add_volume()
         self.buttons()
-
-        while self.playing == {}:
-            self.root.update()
 
         print(json.dumps(self.playing, indent=4))
         while True:
@@ -151,9 +153,7 @@ class main:
 
     def add_lower_frame(self):
         self.lower_frame = tk.Frame(self.canvas)
-        self.lower_frame.grid_propagate = False
-        self.lower_frame.pack_propagate = False
-        self.lower_frame.pack(side='bottom', anchor='w')
+        self.lower_frame.pack(side='bottom', fill='x',anchor='w')
         self.label1 = tk.Label(
             self.lower_frame,
             text = '',
@@ -165,6 +165,7 @@ class main:
         self.label2 = tk.Label(
             self.lower_frame,
             text = '',
+            justify='left',
             anchor = 'sw',
             wraplength = 200,
             width=28
@@ -295,6 +296,7 @@ class main:
         print(r.text)
 
     def add_uri(self):
+        self.last.destroy()
         f1 = tk.Frame(self.frame, relief='raised',bd=2)
         f1.pack()
         f2 = tk.Frame(f1)
@@ -325,6 +327,11 @@ class main:
         )
         self.end_entries[-1].grid(row=0,column=4, sticky = 'e')
         self.index += 1
+        self.add_last()
+
+    def add_last(self):
+        self.last = tk.Frame(self.frame,bd=2,height=50)
+        self.last.pack()
 
     def start(self, index):
         self.time_true = False
@@ -345,7 +352,7 @@ class main:
 
     def time_thread(self, time1):
         self.time_true = True
-        self.time2 = self.time1/100
+        self.time2 = time1/100
         for i in range(100):
             time.sleep(self.time2)
             if not self.time_true:
@@ -359,15 +366,21 @@ class main:
             if response.status_code == 429:
                 time.sleep(1)
             if response.status_code != 204 and response.status_code != 429:
-                self.playing = json.loads(response.text)
+                json_response = json.loads(response.text)
+                if response.status_code == 401:
+                    self.refresh()
+                else:
+                    self.playing = json_response
             if self.kill_thread:
                 return
             time.sleep(0.05)
 
     def add_scrollbar(self):
-        self.canvas = tk.Canvas(self.root, borderwidth=0, height=650,width=680)
+        self.canvas = tk.Canvas(self.root, borderwidth=0, height=650,width=660)
         self.canvas.pack_propagate(False)
         self.frame = tk.Frame(self.canvas)
+
+        self.add_lower_frame()
 
         self.vsb = tk.Scrollbar(self.root, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.vsb.set)
@@ -380,10 +393,23 @@ class main:
             anchor="nw",
             tags="self.frame"
         )
-        self.frame.pack(side='top',anchor='w')
 
         self.frame.bind("<Configure>", self.onFrameConfigure)
         self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def refresh(self):
+        with open(".cache-" + self.username, 'r') as file:
+            refresh_token = json.loads(file.read())['refresh_token']
+
+        contents = self.refreshing.refresh_auth(refresh_token)
+        with open(".cache-" + self.username, 'w+') as file:
+            file.write(json.dumps(contents))
+
+        self.headers = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {contents["access_token"]}',
+        }
 
     def onFrameConfigure(self, event):
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
@@ -391,5 +417,37 @@ class main:
     def _on_mousewheel(self, event):
         self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
+class Refresh:
+    def __init__(self, client_id, client_secret):
+        self.client_id = client_id
+        self.client_secret = client_secret
+
+    def refresh_auth(self, refresh_token):
+        b64 = base64.b64encode(
+        bytearray(f"{self.client_id}:{self.client_secret}", 'utf-8')
+        ).decode()
+        headers = {
+        "Authorization": f"Basic {b64}"
+        }
+
+        data = {
+            "grant_type": 'refresh_token',
+            "refresh_token": refresh_token
+        }
+        r = requests.post(
+            "https://accounts.spotify.com/api/token",
+            data = data,
+            headers = headers
+        )
+        contents = r.json()
+        if not 'refresh_token' in contents:
+            contents['refresh_token'] = refresh_token
+        contents['expires_at'] = int(time.time()) + contents['expires_in']
+
+        return contents
+
 if __name__ == "__main__":
-    main()
+    Main()
+    import gui
+    r = gui.Refresh("84995ad2d73d410f9435fbe299ff4860", "2b388f9eb6fe46fabf2b5cde283d92f3")
+    r.refresh_auth("AQAvSk0IrzTe5q5cI9UwwA0vvKXUZVhL9y7c4vb26v-JbRdDFzZX3DkySbsD1oAnstLhP02riUaYH3Y0c2LrPwwN6P1o96XSFzyP0i46w5gTsYqiA4QNPLJ74xh1XVFS1FUKpw")
