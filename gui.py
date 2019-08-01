@@ -1,5 +1,6 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import filedialog
+from tkinter import messagebox
 from functools import partial
 import spotipy
 import spotipy.util as util
@@ -9,10 +10,11 @@ import threading
 import json
 import datetime
 import base64
+import os
 
 
 class Main:
-    def __init__(self, device_id=None):
+    def __init__(self, uris=None):
         self.root = tk.Tk()
         self.root.title("Spotify")
 
@@ -22,11 +24,13 @@ class Main:
         self.kill_thread = False
         self.index = 0
         self.uri_entries = []
+        self.name_entries = []
         self.start_entries = []
         self.end_entries = []
         self.time2 = 0
         self.old_volume = 0
         previous_ms = 0
+
         with open("config.json", 'r') as file:
             config = json.loads(file.read())
             self.username = config['username']
@@ -60,9 +64,10 @@ class Main:
 
         self.add_scrollbar()
         self.add_last()
-        for i in range(8):
-            self.add_uri()
-        self.add_volume()
+        if uris:
+            for i in uris:
+                self.add_uri(i[0],i[1],i[2], i[3])
+        self.add_uri()
         self.buttons()
 
         print(json.dumps(self.playing, indent=4))
@@ -184,8 +189,24 @@ class Main:
             showvalue=False
         )
         self.scale.grid(row=1,column=2,sticky='s')
-
         self.buttons_frame = tk.Frame(self.lower_frame)
+        self.add_volume()
+        tk.Button(
+            self.lower_frame,
+            text = "Save",
+            command = self.save
+        ).grid(row=0,column=3,sticky='w')
+        tk.Button(
+            self.lower_frame,
+            text = "   Load   ",
+            command = partial(Load, self)
+        ).grid(row=0,column=4,sticky='w')
+        tk.Button(
+            self.lower_frame,
+            text = "         Add uri         ",
+            command = self.add_uri
+        ).grid(row=0,column=5,sticky='w')
+
 
     def add_volume(self):
         tk.Label(self.lower_frame,text='Volume:').grid(row=1, column=4)
@@ -295,7 +316,7 @@ class Main:
         print(r)
         print(r.text)
 
-    def add_uri(self):
+    def add_uri(self, uri=None, start=None, end=None, name=None):
         self.last.destroy()
         f1 = tk.Frame(self.frame, relief='raised',bd=2)
         f1.pack()
@@ -309,9 +330,16 @@ class Main:
             tk.Entry(f2, width=37)
         )
         self.uri_entries[-1].grid(row=0,column=1)
+
+        tk.Label(f2, text = 'arbitrary name: ').grid(row=0,column=2)
+        self.name_entries.append(
+            tk.Entry(f2, width=37)
+        )
+        self.name_entries[-1].grid(row=0,column=3)
+
         tk.Button(
-            f2, text = "Start", command = partial(self.start, self.index)
-        ).grid(row=0,column=2)
+            f3, text = "Start", command = partial(self.start, self.index)
+        ).grid(row=0,column=5)
 
         tk.Label(f3, text = 'start (ms): ').grid(row=0, column=0, sticky = 'w')
 
@@ -327,6 +355,16 @@ class Main:
         )
         self.end_entries[-1].grid(row=0,column=4, sticky = 'e')
         self.index += 1
+
+        if uri:
+            self.uri_entries[-1].insert(0, uri)
+        if start:
+            self.start_entries[-1].insert(0, start)
+        if end:
+            self.end_entries[-1].insert(0, end)
+        if name:
+            self.name_entries[-1].insert(0, name)
+
         self.add_last()
 
     def add_last(self):
@@ -360,6 +398,33 @@ class Main:
                 return
         requests.put('https://api.spotify.com/v1/me/player/pause', headers=self.headers)
 
+    def save(self):
+        if not os.path.isdir('saves'):
+            os.mkdir('saves')
+        file = tk.filedialog.asksaveasfilename(
+            initialdir = "saves",
+            title = "Select file",
+            filetypes = (
+                ("json files","*.json"),
+                ("all files","*.*")
+            )
+        )
+        if file:
+            if not len(file) >= 5 or not '.json' in file:
+                file += '.json'
+            contents = []
+            for uri, start, end, name in zip(
+                self.uri_entries,
+                self.start_entries,
+                self.end_entries,
+                self.name_entries
+            ):
+                if uri.get() or start.get() or end.get() or name.get():
+                    contents.append((uri.get(), start.get(), end.get(), name.get()))
+            with open(file, 'w+') as file:
+                file.write(json.dumps(contents,indent=4))
+
+
     def listener(self):
         while True:
             response = requests.get("https://api.spotify.com/v1/me/player/", headers = self.headers)
@@ -376,7 +441,7 @@ class Main:
             time.sleep(0.05)
 
     def add_scrollbar(self):
-        self.canvas = tk.Canvas(self.root, borderwidth=0, height=650,width=660)
+        self.canvas = tk.Canvas(self.root, borderwidth=0, height=650,width=700)
         self.canvas.pack_propagate(False)
         self.frame = tk.Frame(self.canvas)
 
@@ -445,6 +510,27 @@ class Refresh:
         contents['expires_at'] = int(time.time()) + contents['expires_in']
 
         return contents
+
+class Load:
+    def __init__(self, parent):
+        if not os.path.isdir('saves'):
+            os.mkdir('saves')
+        file = tk.filedialog.askopenfilename(
+            initialdir = "saves",
+            title = "Select file",
+            filetypes = (
+                ("json files","*.json"),
+                ("all files","*.*")
+            )
+        )
+        if file:
+            if tk.messagebox.askokcancel("Continue?", "Are you sure you want to continue, this will overwrite your old settings"):
+                parent.root.destroy()
+                parent.kill_thread = True
+                parent.time_true = False
+            with open(file, 'r') as file:
+                contents = json.loads(file.read())
+            Main(contents)
 
 if __name__ == "__main__":
     Main()
